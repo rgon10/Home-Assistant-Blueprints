@@ -1,6 +1,9 @@
 blueprint:
   name: Motion Lights
-  description: Custom Motion Lights
+  description: >
+    # Motion Lighting
+
+    **Version 1.0**
   domain: automation
   input:
     occupancy_sensor:
