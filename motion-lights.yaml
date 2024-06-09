@@ -1,0 +1,169 @@
+blueprint:
+  name: Motion Lights
+  description: Custom Motion Lights
+  domain: automation
+  input:
+    occupancy_sensor:
+      name: Occupancy Sensor
+      description: The automation will trigger based off this sensor
+      selector:
+        entity:
+          domain: binary_sensor
+          device_class: occupancy
+
+    home_group:
+      name: Group
+      description: Group of people to be home for the automation to run
+      selector:
+        entity:
+          domain: group
+
+    sun_elevation:
+      name: Sun Elevation
+      description: The sun must be below this elevation for the automation to run
+      selector:
+        number:
+          max: 10
+          min: -10
+          unit_of_measurement: degrees
+
+    brightness_sensor:
+      name: Brightness Sensor
+      description: The brightness sensor to use to override the sun elevation
+      selector:
+        entity:
+          domain: sensor
+          device_class: illuminance
+
+    brightness_min:
+      name: Minimum Brightness
+      description: Overrides the sun elevation if the room is below this brightness
+      selector:
+        number:
+          max: 10
+          min: 0
+          unit_of_measurement: lx
+
+    tracking_bool:
+      name: Daytime Tracking Boolean
+      description: This is the created input boolean to track if the daytime scene is activated
+      selector:
+        entity:
+          domain: input_boolean
+
+    night_bool:
+      name: Night Time Boolean
+      description: This is the created input boolean to disable automations at night
+      selector:
+        entity:
+          domain: input_boolean
+
+    light_group:
+      name: Room Lights
+      description: Light or Light Group to track / manage
+      selector:
+        entity:
+          domain: light
+
+    night_scene:
+      name: Night Scene
+      description: Scene to use when the sun is below the threshold
+      selector:
+        entity:
+          domain: scene
+
+    day_scene:
+      name: Day Scene
+      description: Scene to use when the sun is above and the brightness is below the thresholds
+      selector:
+        entity:
+          domain: scene
+
+    delay:
+      name: Delay
+      description: How long to keep the lights on after motion stops
+      selector:
+        number:
+          min: 0
+          max: 120
+          unit_of_measurement: minutes
+
+mode: restart
+max_exceeded: silent
+
+trigger:
+  - platform: state
+    entity_id: !input occupancy_sensor
+    from: "off"
+    to: "on"
+
+condition:
+  - condition: state
+    entity_id: !input home_group
+    state: "home"
+
+  - or:
+      - condition: numeric_state
+        entity_id: sun.sun
+        attribute: elevation
+        below: !input sun_elevation
+      - condition: numeric_state
+        entity_id: !input brightness_sensor
+        below: !input brightness_min
+      - condition: state
+        entity_id: !input tracking_bool
+        state: "on"
+  - condition: state
+    entity_id: !input night_bool
+    state: "off"
+
+action:
+  - choose:
+      - conditions:
+          - or:
+              - condition: state
+                entity_id: !input light_group
+                state: "off"
+              - condition: state
+                entity_id: !input tracking_bool
+                state: "on"
+          - condition: numeric_state
+            entity_id: sun.sun
+            attribute: elevation
+            below: !input sun_elevation
+        sequence:
+          - service: scene.turn_on
+            target:
+              entity_id: !input night_scene
+          - service: input_boolean.turn_off
+            target:
+              entity_id: !input tracking_bool
+      - conditions:
+          - condition: state
+            entity_id: !input light_group
+            state: "off"
+          - condition: numeric_state
+            entity_id: sun.sun
+            attribute: elevation
+            above: !input sun_elevation
+        sequence:
+          - service: scene.turn_on
+            target:
+              entity_id: !input day_scene
+          - service: input_boolean.turn_on
+            target:
+              entity_id: !input tracking_bool
+    default: []
+
+  - wait_for_trigger:
+      platform: state
+      entity_id: !input occupancy_sensor
+      from: "on"
+      to: "off"
+
+  - delay:
+      minutes: !input delay
+
+  - service: light.turn_off
+    target:
+      entity_id: !input light_group
